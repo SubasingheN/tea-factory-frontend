@@ -1,0 +1,257 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.glass-card {
+  width: 100%;
+  max-width: 460px;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 35px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.logo-circle {
+  width: 65px;
+  height: 65px;
+  border-radius: 50%;
+  background: #166534;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.auth-card h2 {
+  text-align: center;
+  font-size: 2rem;
+  color: #ffffff;
+}
+
+.auth-subtitle {
+  text-align: center;
+  color: #f1f5f9;
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-form label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #ffffff;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.88);
+  color: #1e293b;
+}
+
+.auth-form input:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  outline: none;
+}
+
+.primary-btn {
+  background: #166534;
+  color: white;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.primary-btn:hover {
+  background: #14532d;
+}
+
+.auth-footer {
+  margin-top: 22px;
+  text-align: center;
+  color: #f8fafc;
+}
+
+.auth-footer a {
+  color: #bbf7d0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Home page layout */
+.home-page {
+  min-height: 100vh;
+  background: #f8fafc;
+}
+
+.topbar {
+  background: #166534;
+  color: white;
+  padding: 18px 30px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-title h1 {
+  font-size: 1.7rem;
+  margin: 0;
+}
+
+.secondary-btn {
+  background: white;
+  color: #166534;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.home-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.hero-with-image {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 32px;
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.hero-text h2 {
+  font-size: 2rem;
+  color: #0f172a;
+  margin-bottom: 12px;
+}
+
+.hero-text p {
+  color: #64748b;
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.hero-image-box {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+.hero-image {
+  width: 100%;
+  height: 320px;
+  object-fit: cover;
+  display: block;
+  border-radius: 18px;
+}
+
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.module-card {
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  transition: 0.2s;
+}
+
+.module-card:hover {
+  transform: translateY(-4px);
+}
+
+.module-icon {
+  color: #166534;
+  margin-bottom: 16px;
+}
+
+.module-card h3 {
+  font-size: 1.2rem;
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.module-card p {
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+  .hero-with-image {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-image {
+    height: 260px;
+  }
+
+  .module-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-image {
+    height: 220px;
+  }
+
+  .hero-text h2 {
+    font-size: 1.5rem;
+  }
+
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
