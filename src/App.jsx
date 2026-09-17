@@ -9,7 +9,6 @@ import {
 
 import LoginPage from "./pages/auth/LoginPage";
 import SignInPage from "./pages/auth/SignInPage";
-
 import HomePage from "./pages/dashboard/HomePage";
 
 import TeaQuantityPrediction from "./pages/quantity/TeaQuantityPrediction";
@@ -23,79 +22,50 @@ import DemandAlerts from "./pages/demand/DemandAlerts";
 import DemandExplainability from "./pages/demand/DemandExplainability";
 import DemandHistory from "./pages/demand/DemandHistory";
 import DemandReports from "./pages/demand/DemandReports";
-
+import AuctionResearch from "./pages/demand/AuctionResearch";
 
 function App() {
   return (
     <Router>
-
       <Routes>
-
         <Route
           path="/"
-          element={
-            <Navigate
-              to="/login"
-              replace
-            />
-          }
+          element={<Navigate to="/login" replace />}
         />
-
 
         <Route
           path="/login"
-          element={
-            <LoginPage />
-          }
+          element={<LoginPage />}
         />
-
 
         <Route
           path="/signin"
-          element={
-            <SignInPage />
-          }
+          element={<SignInPage />}
         />
-
 
         <Route
           path="/home"
-          element={
-            <HomePage />
-          }
+          element={<HomePage />}
         />
-
 
         <Route
           path="/tea-quantity-prediction"
-          element={
-            <TeaQuantityPrediction />
-          }
+          element={<TeaQuantityPrediction />}
         />
-
 
         <Route
           path="/tea-leaves-grading"
-          element={
-            <TeaLeavesGrading />
-          }
+          element={<TeaLeavesGrading />}
         />
-
 
         <Route
           path="/tea-demand-forecasting"
-          element={
-            <TeaDemandForecasting />
-          }
+          element={<TeaDemandForecasting />}
         >
-
           <Route
             index
-            element={
-              <DemandHome />
-            }
+            element={<DemandHome />}
           />
-
 
           <Route
             path="dashboard"
@@ -107,61 +77,44 @@ function App() {
             }
           />
 
-
           <Route
             path="weekly-data"
-            element={
-              <WeeklyDataEntry />
-            }
+            element={<WeeklyDataEntry />}
           />
-
 
           <Route
             path="forecast"
-            element={
-              <DemandForecast />
-            }
+            element={<DemandForecast />}
           />
-
 
           <Route
             path="alerts"
-            element={
-              <DemandAlerts />
-            }
+            element={<DemandAlerts />}
           />
-
 
           <Route
             path="explainability"
-            element={
-              <DemandExplainability />
-            }
+            element={<DemandExplainability />}
           />
-
 
           <Route
             path="history"
-            element={
-              <DemandHistory />
-            }
+            element={<DemandHistory />}
           />
-
 
           <Route
             path="reports"
-            element={
-              <DemandReports />
-            }
+            element={<DemandReports />}
           />
 
+          <Route
+            path="auction-research"
+            element={<AuctionResearch />}
+          />
         </Route>
-
       </Routes>
-
     </Router>
   );
 }
-
 
 export default App;
