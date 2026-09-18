@@ -37,6 +37,8 @@ export default function AuctionResearch() {
   const [error, setError] = useState("");
   const [forecast, setForecast] = useState(null);
   const [forecastError, setForecastError] = useState("");
+  const [prospective, setProspective] = useState(null);
+  const [prospectiveError, setProspectiveError] = useState("");
   const [selectedTarget, setSelectedTarget] = useState(TARGETS[0]);
 
   useEffect(() => {
@@ -72,6 +74,24 @@ export default function AuctionResearch() {
       .then(setForecast)
       .catch((reason) => {
         if (reason.name !== "AbortError") setForecastError(reason.message);
+      });
+
+    fetch(`${API_BASE}/research/auction/prospective`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(
+            "The frozen forecast snapshot is unavailable."
+          );
+        }
+        return response.json();
+      })
+      .then(setProspective)
+      .catch((reason) => {
+        if (reason.name !== "AbortError") {
+          setProspectiveError(reason.message);
+        }
       });
 
     return () => controller.abort();
@@ -192,6 +212,70 @@ export default function AuctionResearch() {
         </>
       )}
 
+      <h2>Frozen forecasts before September auctions</h2>
+      {prospectiveError && (
+        <p role="alert">{prospectiveError}</p>
+      )}
+      {!prospective && !prospectiveError && (
+        <p>Loading the frozen predictions…</p>
+      )}
+      {prospective && (
+        <>
+          <p>
+            Saved on <strong>{prospective.issued_at_utc}</strong>, using
+            sales through {prospective.last_source_sale_date}. These six
+            predictions were committed before their target weeks. The
+            same historical source week underlies both target weeks.
+          </p>
+          <p>
+            {prospective.scope_note} {prospective.outcome_note}
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th scope="col">Week starting</th>
+                  <th scope="col">Elevation</th>
+                  <th scope="col">TFT median</th>
+                  <th scope="col">Last week</th>
+                  <th scope="col">Four-week mean</th>
+                  <th scope="col">Observed</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prospective.forecasts.map((row) => (
+                  <tr
+                    key={`${row.target}-${row.target_week_start}`}
+                  >
+                    <td>{row.target_week_start}</td>
+                    <th scope="row">
+                      {NAMES[row.target] || row.target}
+                    </th>
+                    <td>{row.tft_p50_1000kg.toFixed(2)}</td>
+                    <td>
+                      {row.last_baseline_1000kg.toFixed(2)}
+                    </td>
+                    <td>
+                      {row.mean4_baseline_1000kg.toFixed(2)}
+                    </td>
+                    <td>
+                      {row.actual_1000kg?.toFixed(2) ?? "—"}
+                    </td>
+                    <td>{row.outcome_status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p>
+            All volumes are thousand kg. An observed result requires
+            verification against a later published auction table before
+            calculating prospective accuracy.
+          </p>
+        </>
+      )}
+
       <h2>Why did this forecast change?</h2>
       {!forecast && (
         <p>Load the dated forecast to view its explanation.</p>
@@ -242,8 +326,12 @@ export default function AuctionResearch() {
               <tbody>
                 {sensitivity.map((row) => (
                   <tr key={row.input_week_start}>
-                    <th scope="row">{row.input_week_start}</th>
-                    <td>{row.observed_1000kg.toFixed(2)}</td>
+                    <th scope="row">
+                      {row.input_week_start}
+                    </th>
+                    <td>
+                      {row.observed_1000kg.toFixed(2)}
+                    </td>
                     {row.median_forecast_change_1000kg_by_horizon.map(
                       (change, index) => (
                         <td key={index}>
@@ -295,7 +383,9 @@ export default function AuctionResearch() {
                 {TARGETS.flatMap((target) =>
                   methods.map((method) => (
                     <tr key={`${target}-${method}`}>
-                      <th scope="row">{NAMES[target]}</th>
+                      <th scope="row">
+                        {NAMES[target]}
+                      </th>
                       <td>{METHODS[method]}</td>
                       <td>
                         {averageByMethod(
