@@ -2341,3 +2341,168 @@ body {
   }
 
 }
+
+
+/* ========================================================
+   PREMIUM CEYLON TEA THEME
+   Shared Tea Demand Forecasting UI
+   ======================================================== */
+
+.demand-app-layout {
+  background: var(--color-warm-ivory);
+}
+
+.demand-sidebar {
+  background: var(--color-deep-forest);
+  color: var(--color-white);
+  border-right: 1px solid rgba(200, 164, 93, 0.22);
+}
+
+.demand-sidebar-brand {
+  border-bottom: 1px solid rgba(200, 164, 93, 0.28);
+}
+
+.demand-sidebar-brand h2 {
+  color: var(--color-white);
+}
+
+.demand-sidebar-brand p {
+  color: #d2e1d6;
+}
+
+.demand-nav-link {
+  color: #e0ece3;
+  border: 1px solid transparent;
+}
+
+.demand-nav-link:hover {
+  color: var(--color-white);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(200, 164, 93, 0.22);
+}
+
+.demand-nav-link.active {
+  background: var(--color-warm-ivory);
+  color: var(--color-deep-forest);
+  border-color: var(--color-tea-gold);
+  box-shadow: inset 3px 0 0 var(--color-tea-gold);
+}
+
+.demand-back-btn {
+  color: #e0ece3;
+  border-top-color: rgba(200, 164, 93, 0.3);
+}
+
+.demand-back-btn:hover {
+  color: #ffffff;
+}
+
+.demand-main-content {
+  background: var(--color-warm-ivory);
+}
+
+/* Standard inner pages */
+
+.demand-page,
+.demand-dashboard {
+  background: linear-gradient(
+    180deg,
+    var(--color-soft-cream) 0%,
+    var(--color-warm-ivory) 100%
+  );
+}
+
+.demand-page-header h1,
+.demand-header h1,
+.demand-section h2,
+.demand-panel h2 {
+  color: var(--color-deep-forest);
+}
+
+.demand-page-label,
+.demand-section-kicker {
+  color: var(--color-tea-green);
+}
+
+/* Panels and cards */
+
+.demand-panel,
+.demand-section,
+.demand-stat-card,
+.demand-summary-card,
+.weekly-tea-card,
+.forecast-type-card,
+.alert-summary-card,
+.explain-summary-card,
+.history-summary-card,
+.reports-summary-card,
+.tea-forecast-card {
+  background: var(--color-white);
+  border-color: var(--color-muted-sage);
+}
+
+.demand-stat-icon,
+.demand-feature-icon,
+.forecast-insight-icon,
+.report-icon-box {
+  background: #eaf3ed;
+  color: var(--color-tea-green);
+}
+
+/* Buttons */
+
+.demand-save-btn,
+.report-download-btn {
+  background: var(--color-tea-green);
+  color: var(--color-white);
+}
+
+.demand-save-btn:hover,
+.report-download-btn:hover {
+  background: var(--color-deep-forest);
+}
+
+.forecast-refresh-btn {
+  border-color: var(--color-muted-sage);
+  color: var(--color-tea-green);
+}
+
+.forecast-refresh-btn:hover {
+  background: var(--color-soft-cream);
+}
+
+/* Inputs */
+
+.demand-input {
+  border-color: var(--color-muted-sage);
+  background: var(--color-white);
+  color: var(--color-text-primary);
+}
+
+.demand-input:focus {
+  border-color: var(--color-tea-green);
+  box-shadow: 0 0 0 3px rgba(46, 107, 78, 0.12);
+}
+
+/* Tables */
+
+.dashboard-table-row.header,
+.history-table-row.header {
+  background: var(--color-soft-cream);
+  color: var(--color-deep-forest);
+}
+
+.dashboard-table-row,
+.history-table-row {
+  border-bottom-color: var(--color-muted-sage);
+}
+
+/* Keyboard accessibility */
+
+.demand-nav-link:focus-visible,
+.demand-back-btn:focus-visible,
+.demand-save-btn:focus-visible,
+.report-download-btn:focus-visible {
+  outline: 3px solid var(--color-tea-gold);
+  outline-offset: 3px;
+}

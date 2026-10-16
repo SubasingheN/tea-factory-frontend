@@ -50,5 +50,7 @@ Thumbs.db
 # ==================================================
 
 frontend_inspection.txt
+*_inspection.txt
+
 *.tmp
 *.bak
