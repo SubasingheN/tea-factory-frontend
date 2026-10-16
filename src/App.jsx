@@ -1,3 +1,4 @@
+
 import React from "react";
 
 import {
@@ -19,83 +20,57 @@ import TeaDemandForecasting from "./pages/demand/TeaDemandForecasting";
 import DemandHome from "./pages/demand/DemandHome";
 import WeeklyDataEntry from "./pages/demand/WeeklyDataEntry";
 import DemandForecast from "./pages/demand/DemandForecast";
+import ResearchTFTForecast from "./pages/demand/ResearchTFTForecast";
+import ResearchTFTExplainability from "./pages/demand/ResearchTFTExplainability";
 import DemandAlerts from "./pages/demand/DemandAlerts";
 import DemandExplainability from "./pages/demand/DemandExplainability";
 import DemandHistory from "./pages/demand/DemandHistory";
 import DemandReports from "./pages/demand/DemandReports";
 
-
 function App() {
   return (
     <Router>
-
       <Routes>
-
         <Route
           path="/"
           element={
-            <Navigate
-              to="/login"
-              replace
-            />
+            <Navigate to="/login" replace />
           }
         />
-
 
         <Route
           path="/login"
-          element={
-            <LoginPage />
-          }
+          element={<LoginPage />}
         />
-
 
         <Route
           path="/signin"
-          element={
-            <SignInPage />
-          }
+          element={<SignInPage />}
         />
-
 
         <Route
           path="/home"
-          element={
-            <HomePage />
-          }
+          element={<HomePage />}
         />
-
 
         <Route
           path="/tea-quantity-prediction"
-          element={
-            <TeaQuantityPrediction />
-          }
+          element={<TeaQuantityPrediction />}
         />
-
 
         <Route
           path="/tea-leaves-grading"
-          element={
-            <TeaLeavesGrading />
-          }
+          element={<TeaLeavesGrading />}
         />
-
 
         <Route
           path="/tea-demand-forecasting"
-          element={
-            <TeaDemandForecasting />
-          }
+          element={<TeaDemandForecasting />}
         >
-
           <Route
             index
-            element={
-              <DemandHome />
-            }
+            element={<DemandHome />}
           />
-
 
           <Route
             path="dashboard"
@@ -107,61 +82,49 @@ function App() {
             }
           />
 
-
           <Route
             path="weekly-data"
-            element={
-              <WeeklyDataEntry />
-            }
+            element={<WeeklyDataEntry />}
           />
-
 
           <Route
             path="forecast"
-            element={
-              <DemandForecast />
-            }
+            element={<DemandForecast />}
           />
 
+          <Route
+            path="research-forecast"
+            element={<ResearchTFTForecast />}
+          />
+
+          <Route
+            path="research-explainability"
+            element={<ResearchTFTExplainability />}
+          />
 
           <Route
             path="alerts"
-            element={
-              <DemandAlerts />
-            }
+            element={<DemandAlerts />}
           />
-
 
           <Route
             path="explainability"
-            element={
-              <DemandExplainability />
-            }
+            element={<DemandExplainability />}
           />
-
 
           <Route
             path="history"
-            element={
-              <DemandHistory />
-            }
+            element={<DemandHistory />}
           />
-
 
           <Route
             path="reports"
-            element={
-              <DemandReports />
-            }
+            element={<DemandReports />}
           />
-
         </Route>
-
       </Routes>
-
     </Router>
   );
 }
-
 
 export default App;
