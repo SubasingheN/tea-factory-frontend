@@ -1,48 +1,462 @@
+
 import React, {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import {
-  History,
-  CalendarDays,
-  GitCompareArrows,
   AlertTriangle,
-  Layers3,
-  CheckCircle2,
+  CalendarDays,
+  History,
+  TrendingUp,
 } from "lucide-react";
 
 import {
-  getForecastHistory,
-  getForecastComparison,
-} from "../../services/demandService";
+  EIGHT_INPUT_GRADES,
+} from "../../services/eightInputDataService";
 
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
+
+const COLORS = {
+  forest: "#153D2B",
+  green: "#2E6B4E",
+  ivory: "#F5F3E9",
+  white: "#FFFFFF",
+  muted: "#63756A",
+  border: "#D8E2D3",
+  danger: "#A73939",
+};
+
+const PANEL_STYLE = {
+  padding: 24,
+  background: COLORS.white,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 18,
+  marginBottom: 20,
+  boxShadow: "0 4px 18px rgba(21,61,43,0.04)",
+};
+
+const INPUT_STYLE = {
+  width: "100%",
+  padding: "12px 14px",
+  boxSizing: "border-box",
+  background: COLORS.white,
+  color: COLORS.forest,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 9,
+  fontSize: 14,
+};
+
+const CELL_STYLE = {
+  padding: "12px 14px",
+  borderBottom: `1px solid ${COLORS.border}`,
+  whiteSpace: "nowrap",
+  fontSize: 14,
+};
+
+function addDays(value, days) {
+  if (!value) return "";
+
+  const date = new Date(
+    `${String(value).slice(0, 10)}T12:00:00Z`
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  date.setUTCDate(
+    date.getUTCDate() + days
+  );
+
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const date = new Date(
+    `${String(value).slice(0, 10)}T12:00:00Z`
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(
+    "en-GB",
+    {
+      timeZone: "UTC",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function formatWeek(weekStart) {
+  return (
+    `${formatDate(weekStart)} – ` +
+    formatDate(addDays(weekStart, 6))
+  );
+}
+
+function formatNumber(value, digits = 2) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    !Number.isFinite(Number(value))
+  ) {
+    return "—";
+  }
+
+  return Number(value).toLocaleString(
+    "en-GB",
+    {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: digits,
+    }
+  );
+}
+
+function formatKg(value) {
+  const number = formatNumber(value);
+
+  return number === "—"
+    ? "—"
+    : `${number} kg`;
+}
+
+function revisionLabel(revision) {
+  return revision === 0
+    ? "Original Forecast"
+    : `Revision ${revision}`;
+}
+
+function getLatestCompletedWeek() {
+  const today = new Date();
+
+  const localDate = new Date(
+    Date.UTC(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    )
+  );
+
+  const day = localDate.getUTCDay();
+
+  const daysSinceMonday =
+    (day + 6) % 7;
+
+  localDate.setUTCDate(
+    localDate.getUTCDate() -
+      daysSinceMonday -
+      7
+  );
+
+  return localDate
+    .toISOString()
+    .slice(0, 10);
+}
+
+function getReportingWeeks() {
+  const latestCompleted =
+    getLatestCompletedWeek();
+
+  return Array.from(
+    { length: 4 },
+    (_, index) =>
+      addDays(
+        latestCompleted,
+        index * -7
+      )
+  );
+}
+
+function validateForecastRecord(
+  record,
+  origin,
+  grade
+) {
+  if (
+    !record ||
+    record.finalized !== true ||
+    record.tea_type !== grade ||
+    record.forecast_origin !== origin ||
+    !Array.isArray(record.forecasts) ||
+    record.forecasts.length !== 4
+  ) {
+    return false;
+  }
+
+  return record.forecasts.every(
+    (prediction, index) => {
+      if (
+        !prediction ||
+        prediction.week !==
+          addDays(
+            origin,
+            (index + 1) * 7
+          ) ||
+        Number(prediction.horizon) !==
+          index + 1
+      ) {
+        return false;
+      }
+
+      const values = [
+        prediction.lower_demand_kg,
+        prediction.median_demand_kg,
+        prediction.upper_demand_kg,
+      ];
+
+      if (
+        values.some(
+          (value) =>
+            value === null ||
+            value === undefined ||
+            value === ""
+        )
+      ) {
+        return false;
+      }
+
+      const [
+        lower,
+        expected,
+        upper,
+      ] = values.map(Number);
+
+      return (
+        Number.isFinite(lower) &&
+        Number.isFinite(expected) &&
+        Number.isFinite(upper) &&
+        lower >= 0 &&
+        lower <= expected &&
+        expected <= upper
+      );
+    }
+  );
+}
+
+function getErrorMessage(error) {
+  return (
+    error?.message ||
+    "Unable to retrieve saved forecasts."
+  );
+}
+
+async function getForecastRevisions(origin) {
+  const params = new URLSearchParams({
+    origin,
+  });
+
+  let response;
+
+  try {
+    response = await fetch(
+      `${API_BASE}/research/eight-input/history/revisions?${params.toString()}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+  } catch {
+    throw new Error(
+      "Cannot connect to the factory backend."
+    );
+  }
+
+  const result = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      typeof result?.detail === "string"
+        ? result.detail
+        : "Unable to retrieve saved forecast versions."
+    );
+  }
+
+  if (
+    result?.status !== "success" ||
+    result.forecast_origin !== origin ||
+    !Array.isArray(result.revisions)
+  ) {
+    throw new Error(
+      "The saved forecast history response is invalid."
+    );
+  }
+
+  return result;
+}
+
+function Panel({
+  title,
+  icon: Icon,
+  children,
+}) {
+  return (
+    <section style={PANEL_STYLE}>
+      <h2
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginTop: 0,
+          marginBottom: 20,
+          fontSize: 19,
+          color: COLORS.forest,
+        }}
+      >
+        {Icon && (
+          <Icon
+            size={20}
+            color={COLORS.green}
+          />
+        )}
+
+        {title}
+      </h2>
+
+      {children}
+    </section>
+  );
+}
+
+function ForecastTable({ record }) {
+  return (
+    <div
+      style={{
+        overflowX: "auto",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          minWidth: 680,
+          borderCollapse: "collapse",
+          textAlign: "left",
+        }}
+      >
+        <thead>
+          <tr
+            style={{
+              background: COLORS.forest,
+              color: COLORS.white,
+            }}
+          >
+            {[
+              "Forecast Week",
+              "Lower Demand",
+              "Expected Demand",
+              "Upper Demand",
+            ].map((heading) => (
+              <th
+                key={heading}
+                style={{
+                  padding: "13px 14px",
+                  fontSize: 13,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {record.forecasts.map(
+            (prediction, index) => (
+              <tr
+                key={prediction.week}
+              >
+                <td style={CELL_STYLE}>
+                  <strong>
+                    Week {index + 1}
+                  </strong>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      fontSize: 12,
+                      color: COLORS.muted,
+                    }}
+                  >
+                    {formatWeek(
+                      prediction.week
+                    )}
+                  </div>
+                </td>
+
+                <td style={CELL_STYLE}>
+                  {formatKg(
+                    prediction.lower_demand_kg
+                  )}
+                </td>
+
+                <td
+                  style={{
+                    ...CELL_STYLE,
+                    fontWeight: 700,
+                    color: COLORS.forest,
+                  }}
+                >
+                  {formatKg(
+                    prediction.median_demand_kg
+                  )}
+                </td>
+
+                <td style={CELL_STYLE}>
+                  {formatKg(
+                    prediction.upper_demand_kg
+                  )}
+                </td>
+              </tr>
+            )
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function DemandHistory() {
+  const reportingWeeks = useMemo(
+    () => getReportingWeeks(),
+    []
+  );
+
   const [
-    historyData,
-    setHistoryData,
+    selectedWeek,
+    setSelectedWeek,
+  ] = useState(
+    reportingWeeks[0] || ""
+  );
+
+  const [
+    revisionData,
+    setRevisionData,
   ] = useState(null);
 
   const [
-    comparisonData,
-    setComparisonData,
-  ] = useState(null);
-
-  const [
-    selectedForecastId,
-    setSelectedForecastId,
+    selectedRevision,
+    setSelectedRevision,
   ] = useState("");
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
-
-  const [
-    comparisonLoading,
-    setComparisonLoading,
   ] = useState(false);
 
   const [
@@ -50,1112 +464,397 @@ export default function DemandHistory() {
     setError,
   ] = useState("");
 
-  const [
-    comparisonError,
-    setComparisonError,
-  ] = useState("");
-
-
-  const history = useMemo(() => {
-    const records =
-      historyData?.history ?? [];
-
-    return [...records].reverse();
-
-  }, [historyData]);
-
+  const requestId = useRef(0);
 
   useEffect(() => {
-    loadHistory();
-  }, []);
+    const request =
+      ++requestId.current;
 
+    if (!selectedWeek) {
+      setRevisionData(null);
+      setSelectedRevision("");
+      setLoading(false);
+      return;
+    }
 
-  const loadHistory = async () => {
-    try {
+    let active = true;
+
+    async function loadRevisions() {
       setLoading(true);
       setError("");
-
-
-      const data =
-        await getForecastHistory();
-
-
-      setHistoryData(
-        data
-      );
-
-
-      const records =
-        data?.history ?? [];
-
-
-      const latestForecast =
-        records.length > 0
-          ? records[
-              records.length - 1
-            ]
-          : null;
-
-
-      if (
-        latestForecast?.forecast_id
-      ) {
-        setSelectedForecastId(
-          latestForecast.forecast_id
-        );
-
-
-        await loadComparison(
-          latestForecast.forecast_id
-        );
-      }
-
-
-    } catch (error) {
-      console.error(
-        "Failed to load forecast history:",
-        error
-      );
-
-
-      setError(
-        error.message ||
-        "Failed to load forecast history."
-      );
-
-
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  const loadComparison =
-    async (
-      forecastId
-    ) => {
-
-      if (!forecastId) {
-        return;
-      }
-
+      setRevisionData(null);
+      setSelectedRevision("");
 
       try {
-        setComparisonLoading(
-          true
-        );
-
-        setComparisonError("");
-
-        setComparisonData(
-          null
-        );
-
-
-        const data =
-          await getForecastComparison(
-            forecastId
+        const result =
+          await getForecastRevisions(
+            selectedWeek
           );
 
+        if (
+          !active ||
+          request !== requestId.current
+        ) {
+          return;
+        }
 
-        setComparisonData(
-          data.comparison
+        const availableRevisions =
+          result.revisions.filter(
+            (revision) =>
+              Number.isInteger(
+                revision.revision
+              ) &&
+              revision.revision >= 0 &&
+              revision.forecasts &&
+              typeof revision.forecasts ===
+                "object"
+          );
+
+        const cleanedResult = {
+          ...result,
+          revisions: availableRevisions,
+        };
+
+        setRevisionData(cleanedResult);
+
+        if (
+          availableRevisions.length > 0
+        ) {
+          const latest =
+            availableRevisions.reduce(
+              (max, item) =>
+                Math.max(
+                  max,
+                  item.revision
+                ),
+              0
+            );
+
+          setSelectedRevision(
+            String(latest)
+          );
+        }
+      } catch (caughtError) {
+        if (
+          !active ||
+          request !== requestId.current
+        ) {
+          return;
+        }
+
+        setRevisionData(null);
+        setSelectedRevision("");
+
+        setError(
+          getErrorMessage(caughtError)
         );
-
-
-      } catch (error) {
-        console.error(
-          "Failed to load forecast comparison:",
-          error
-        );
-
-
-        setComparisonError(
-          error.message ||
-          "Failed to load forecast comparison."
-        );
-
-
       } finally {
-        setComparisonLoading(
-          false
-        );
+        if (
+          active &&
+          request === requestId.current
+        ) {
+          setLoading(false);
+        }
       }
+    }
+
+    loadRevisions();
+
+    return () => {
+      active = false;
+      requestId.current += 1;
     };
+  }, [selectedWeek]);
 
+  const availableRevisions = useMemo(
+    () =>
+      [...(
+        revisionData?.revisions || []
+      )].sort(
+        (left, right) =>
+          right.revision - left.revision
+      ),
+    [revisionData]
+  );
 
-  const handleSelectForecast =
-    async (
-      forecastId
-    ) => {
-
-      setSelectedForecastId(
-        forecastId
-      );
-
-
-      await loadComparison(
-        forecastId
-      );
-    };
-
-
-  const formatDateTime = (
-    dateValue
-  ) => {
-    if (!dateValue) {
-      return "-";
-    }
-
-
-    const date =
-      new Date(
-        dateValue
-      );
-
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return dateValue;
-    }
-
-
-    return date.toLocaleString();
-  };
-
-
-  const formatDate = (
-    dateValue
-  ) => {
-    if (!dateValue) {
-      return "-";
-    }
-
-
-    return dateValue;
-  };
-
-
-  const formatKg = (
-    value
-  ) => {
-    if (
-      value === null ||
-      value === undefined
-    ) {
-      return "-";
-    }
-
-
-    return `${Number(
-      value
-    ).toLocaleString(
-      undefined,
-      {
-        maximumFractionDigits: 0,
-      }
-    )} kg`;
-  };
-
-
-  const selectedRecord =
-    history.find(
-      (record) =>
-        record.forecast_id ===
-        selectedForecastId
+  const selectedRevisionGroup =
+    useMemo(
+      () =>
+        availableRevisions.find(
+          (item) =>
+            String(item.revision) ===
+            selectedRevision
+        ) || null,
+      [
+        availableRevisions,
+        selectedRevision,
+      ]
     );
 
+  const selectedForecasts =
+    selectedRevisionGroup?.forecasts ||
+    null;
 
-  if (loading) {
-    return (
-      <div className="demand-page">
-
-        <div className="demand-panel">
-
-          <h2>
-            Loading Forecast History...
-          </h2>
-
-
-          <p>
-            Loading your saved
-            demand forecasts.
-          </p>
-
-        </div>
-
-      </div>
+  const hasCompleteForecast =
+    Boolean(selectedForecasts) &&
+    EIGHT_INPUT_GRADES.every(
+      (grade) =>
+        validateForecastRecord(
+          selectedForecasts[grade],
+          selectedWeek,
+          grade
+        )
     );
-  }
-
-
-  if (error) {
-    return (
-      <div className="demand-page">
-
-        <div className="demand-page-header">
-
-          <span className="demand-page-label">
-            Saved Forecasts
-          </span>
-
-
-          <h1>
-            Forecast History
-          </h1>
-
-        </div>
-
-
-        <div className="demand-panel">
-
-          <div className="dashboard-warning-box">
-
-            <AlertTriangle
-              size={22}
-            />
-
-
-            <div>
-
-              <h3>
-                Unable to load history
-              </h3>
-
-
-              <p>
-                {error}
-              </p>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-    );
-  }
-
 
   return (
-    <div className="demand-page">
-
-      <div className="demand-page-header">
-
-        <span className="demand-page-label">
-          Saved Forecasts
-        </span>
-
-
+    <div
+      className="demand-page"
+      style={{
+        background: COLORS.ivory,
+        minHeight: "100vh",
+        paddingBottom: 40,
+      }}
+    >
+      <div
+        className="demand-page-header"
+        style={{
+          marginBottom: 20,
+        }}
+      >
         <h1>
-          Forecast History
+          Demand Forecast History
         </h1>
-
-
-        <p>
-          Review previous demand
-          forecasts and compare them
-          with actual demand when the
-          completed weekly data becomes
-          available.
-        </p>
-
       </div>
 
-
-      <div className="history-summary-grid">
-
-        <div className="history-summary-card">
-
-          <History
-            size={23}
-          />
-
-
-          <div>
-
-            <span>
-              Saved Forecasts
-            </span>
-
-
-            <h3>
-              {
-                historyData
-                  ?.forecast_count ?? 0
-              }
-            </h3>
-
-          </div>
-
-        </div>
-
-
-        <div className="history-summary-card">
-
-          <CalendarDays
-            size={23}
-          />
-
-
-          <div>
-
-            <span>
-              Forecast Period
-            </span>
-
-
-            <h3>
-              {history.length > 0
-                ? `${
-                    history[0]
-                      .forecast_horizon_weeks
-                  } Weeks`
-                : "-"}
-            </h3>
-
-          </div>
-
-        </div>
-
-
-        <div className="history-summary-card">
-
-          <Layers3
-            size={23}
-          />
-
-
-          <div>
-
-            <span>
-              Tea Types
-            </span>
-
-
-            <h3>
-              {history.length > 0
-                ? history[0]
-                    .tea_type_count
-                : "-"}
-            </h3>
-
-          </div>
-
-        </div>
-
-
-        <div className="history-summary-card">
-
-          <CheckCircle2
-            size={23}
-          />
-
-
-          <div>
-
-            <span>
-              Latest Forecast
-            </span>
-
-
-            <h3>
-              {history.length > 0
-                ? formatDate(
-                    history[0]
-                      .input_week_start_date
-                  )
-                : "-"}
-            </h3>
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <div className="demand-panel">
-
-        <h2>
-          Previous Forecasts
-        </h2>
-
-
-        <p>
-          The newest forecast is shown
-          first. Select any forecast to
-          view its details and comparison.
-        </p>
-
-
-        {history.length === 0 ? (
-
-          <div className="history-comparison-empty">
-
-            <History
-              size={28}
-            />
-
-
-            <div>
-
-              <h3>
-                No saved forecasts
-              </h3>
-
-
-              <p>
-                Generate and save a
-                forecast to create your
-                first history record.
-              </p>
-
-            </div>
-
-          </div>
-
-        ) : (
-
-          <div className="history-table">
-
-            <div className="history-table-row header">
-
-              <span>
-                Forecast
-              </span>
-
-
-              <span>
-                Based on Week
-              </span>
-
-
-              <span>
-                Forecast Period
-              </span>
-
-
-              <span>
-                Saved On
-              </span>
-
-
-              <span>
-                Action
-              </span>
-
-            </div>
-
-
-            {history.map(
-              (
-                record,
-                index
-              ) => (
-
-                <div
-                  key={
-                    record.forecast_id
-                  }
-                  className="history-table-row"
-                >
-
-                  <strong>
-                    Forecast{" "}
-                    {
-                      history.length -
-                      index
-                    }
-                  </strong>
-
-
-                  <span>
-                    {
-                      formatDate(
-                        record
-                          .input_week_start_date
-                      )
-                    }
-                  </span>
-
-
-                  <span>
-                    {
-                      record
-                        .forecast_horizon_weeks
-                    }{" "}
-                    Weeks
-                  </span>
-
-
-                  <span>
-                    {
-                      formatDateTime(
-                        record
-                          .generated_at
-                      )
-                    }
-                  </span>
-
-
-                  <button
-                    type="button"
-                    className="forecast-refresh-btn"
-                    onClick={() =>
-                      handleSelectForecast(
-                        record
-                          .forecast_id
-                      )
-                    }
-                    disabled={
-                      comparisonLoading &&
-                      selectedForecastId ===
-                        record
-                          .forecast_id
-                    }
-                  >
-
-                    <GitCompareArrows
-                      size={16}
-                    />
-
-
-                    {selectedForecastId ===
-                    record.forecast_id
-                      ? "Selected"
-                      : "View"}
-
-                  </button>
-
-                </div>
-
-              )
-            )}
-
-          </div>
-
-        )}
-
-      </div>
-
-
-      {selectedRecord && (
-
-        <div className="demand-panel">
-
-          <h2>
-            Selected Forecast
-          </h2>
-
-
-          <p>
-            Demand forecast based on
-            the completed week starting{" "}
-            <strong>
-              {
-                formatDate(
-                  selectedRecord
-                    .input_week_start_date
+      <Panel
+        title="Select Forecast"
+        icon={History}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 18,
+          }}
+        >
+          <label
+            style={{
+              display: "grid",
+              gap: 9,
+              fontSize: 13,
+              fontWeight: 600,
+              color: COLORS.forest,
+            }}
+          >
+            Reporting Week
+
+            <select
+              value={selectedWeek}
+              onChange={(event) =>
+                setSelectedWeek(
+                  event.target.value
                 )
               }
-            </strong>
-            .
-          </p>
+              style={INPUT_STYLE}
+            >
+              {reportingWeeks.map(
+                (week) => (
+                  <option
+                    key={week}
+                    value={week}
+                  >
+                    {formatWeek(week)}
+                  </option>
+                )
+              )}
+            </select>
+          </label>
 
+          <label
+            style={{
+              display: "grid",
+              gap: 9,
+              fontSize: 13,
+              fontWeight: 600,
+              color: COLORS.forest,
+            }}
+          >
+            Forecast Version
 
-          <div className="forecast-type-grid">
-
-            {(
-              selectedRecord
-                .forecasts ?? []
-            ).map(
-              (tea) => (
-
-                <div
-                  key={
-                    tea.tea_type
-                  }
-                  className="forecast-type-card"
-                >
-
-                  <div className="forecast-type-header">
-
-                    <div>
-
-                      <span>
-                        Tea Type
-                      </span>
-
-
-                      <h3>
-                        {
-                          tea.tea_type
-                        }
-                      </h3>
-
-                    </div>
-
-
-                    <span className="dashboard-status normal">
-                      {
-                        tea.trend ||
-                        "Forecast"
-                      }
-                    </span>
-
-                  </div>
-
-
-                  <div className="forecast-week-list">
-
-                    {(
-                      tea.forecasts ?? []
-                    ).map(
-                      (week) => (
-
-                        <div
-                          key={
-                            week.week
-                          }
-                          className="forecast-week-row"
-                        >
-
-                          <div className="forecast-week-name">
-
-                            <strong>
-                              Week{" "}
-                              {
-                                week.week
-                              }
-                            </strong>
-
-
-                            <span>
-                              {
-                                week
-                                  .week_start_date
-                              }
-                            </span>
-
-                          </div>
-
-
-                          <div className="forecast-week-value">
-
-                            <span>
-                              Expected Demand
-                            </span>
-
-
-                            <strong>
-                              {
-                                formatKg(
-                                  week
-                                    .median_demand_kg
-                                )
-                              }
-                            </strong>
-
-                          </div>
-
-
-                          <div className="forecast-week-range">
-
-                            <span>
-                              Expected Range
-                            </span>
-
-
-                            <strong>
-                              {
-                                week
-                                  .demand_range ||
-                                `${formatKg(
-                                  week
-                                    .lower_demand_kg
-                                )} - ${formatKg(
-                                  week
-                                    .upper_demand_kg
-                                )}`
-                              }
-                            </strong>
-
-                          </div>
-
-                        </div>
-
-                      )
-                    )}
-
-                  </div>
-
-                </div>
-
-              )
-            )}
-
-          </div>
-
+            <select
+              value={selectedRevision}
+              onChange={(event) =>
+                setSelectedRevision(
+                  event.target.value
+                )
+              }
+              style={INPUT_STYLE}
+              disabled={
+                loading ||
+                availableRevisions.length ===
+                  0
+              }
+            >
+              {loading ? (
+                <option value="">
+                  Loading versions...
+                </option>
+              ) : availableRevisions.length ===
+                0 ? (
+                <option value="">
+                  No saved versions
+                </option>
+              ) : (
+                availableRevisions.map(
+                  (item, index) => (
+                    <option
+                      key={item.revision}
+                      value={String(
+                        item.revision
+                      )}
+                    >
+                      {revisionLabel(
+                        item.revision
+                      )}
+                      {index === 0
+                        ? " — Latest"
+                        : ""}
+                    </option>
+                  )
+                )
+              )}
+            </select>
+          </label>
         </div>
 
-      )}
-
-
-      <div className="demand-panel">
-
-        <h2>
-          Forecast vs Actual Demand
-        </h2>
-
-
-        <p>
-          Compare expected demand with
-          the actual demand recorded
-          after each forecast week is
-          completed.
-        </p>
-
-
-        {comparisonLoading ? (
-
-          <div className="history-comparison-empty">
-
-            <GitCompareArrows
-              size={28}
-            />
-
-
-            <div>
-
-              <h3>
-                Loading comparison...
-              </h3>
-
-            </div>
-
-          </div>
-
-        ) : comparisonError ? (
-
-          <div className="dashboard-warning-box">
-
+        {error && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              marginTop: 18,
+              color: COLORS.danger,
+              fontSize: 14,
+            }}
+          >
             <AlertTriangle
-              size={22}
+              size={18}
             />
-
-
-            <div>
-
-              <h3>
-                Unable to load
-                comparison
-              </h3>
-
-
-              <p>
-                {comparisonError}
-              </p>
-
-            </div>
-
+            {error}
           </div>
-
-        ) : comparisonData ? (
-
-          <>
-
-            <div className="history-summary-grid">
-
-              <div className="history-summary-card">
-
-                <GitCompareArrows
-                  size={22}
-                />
-
-
-                <div>
-
-                  <span>
-                    Forecast Values
-                  </span>
-
-
-                  <h3>
-                    {
-                      comparisonData
-                        .total_forecast_records
-                    }
-                  </h3>
-
-                </div>
-
-              </div>
-
-
-              <div className="history-summary-card">
-
-                <CheckCircle2
-                  size={22}
-                />
-
-
-                <div>
-
-                  <span>
-                    Actual Values Available
-                  </span>
-
-
-                  <h3>
-                    {
-                      comparisonData
-                        .actual_records_available
-                    }
-                  </h3>
-
-                </div>
-
-              </div>
-
-
-              <div className="history-summary-card">
-
-                <CheckCircle2
-                  size={22}
-                />
-
-
-                <div>
-
-                  <span>
-                    Within Expected Range
-                  </span>
-
-
-                  <h3>
-                    {
-                      comparisonData
-                        .within_range_count
-                    }
-                  </h3>
-
-                </div>
-
-              </div>
-
-
-              <div className="history-summary-card">
-
-                <Layers3
-                  size={22}
-                />
-
-
-                <div>
-
-                  <span>
-                    Range Accuracy
-                  </span>
-
-
-                  <h3>
-                    {
-                      comparisonData
-                        .range_coverage_percentage !==
-                      null
-                        ? `${
-                            comparisonData
-                              .range_coverage_percentage
-                          }%`
-                        : "-"
-                    }
-                  </h3>
-
-                </div>
-
-              </div>
-
-            </div>
-
-
-            {comparisonData
-              .actual_records_available ===
-            0 ? (
-
-              <div className="history-comparison-empty">
-
-                <GitCompareArrows
-                  size={30}
-                />
-
-
-                <div>
-
-                  <h3>
-                    Actual demand data
-                    is not available yet
-                    for this forecast.
-                  </h3>
-
-
-                  <p>
-                    The comparison will
-                    become available after
-                    the forecast weeks are
-                    completed and their
-                    actual weekly demand
-                    data is recorded.
-                  </p>
-
-                </div>
-
-              </div>
-
-            ) : (
-
-              <div className="history-table">
-
-                <div className="history-table-row header">
-
-                  <span>
-                    Tea Type
-                  </span>
-
-
-                  <span>
-                    Week
-                  </span>
-
-
-                  <span>
-                    Expected Demand
-                  </span>
-
-
-                  <span>
-                    Actual Demand
-                  </span>
-
-
-                  <span>
-                    Difference
-                  </span>
-
-                </div>
-
-
-                {(
-                  comparisonData
-                    .comparisons ?? []
-                ).map(
-                  (
-                    item,
-                    index
-                  ) => (
-
-                    <div
-                      key={
-                        `${
-                          item.tea_type
-                        }-${
-                          item.week
-                        }-${index}`
-                      }
-                      className="history-table-row"
-                    >
-
-                      <strong>
-                        {
-                          item
-                            .tea_type
-                        }
-                      </strong>
-
-
-                      <span>
-                        Week{" "}
-                        {
-                          item.week
-                        }
-                      </span>
-
-
-                      <span>
-                        {
-                          formatKg(
-                            item
-                              .predicted_median_kg
-                          )
-                        }
-                      </span>
-
-
-                      <span>
-                        {
-                          formatKg(
-                            item
-                              .actual_demand_kg
-                          )
-                        }
-                      </span>
-
-
-                      <span>
-                        {
-                          formatKg(
-                            item
-                              .absolute_error_kg
-                          )
-                        }
-                      </span>
-
-                    </div>
-
-                  )
-                )}
-
-              </div>
-
-            )}
-
-          </>
-
-        ) : (
-
-          <div className="history-comparison-empty">
-
-            <GitCompareArrows
-              size={28}
-            />
-
-
-            <div>
-
-              <h3>
-                Select a forecast
-              </h3>
-
-
-              <p>
-                Select a previous
-                forecast to view its
-                comparison with actual
-                demand.
-              </p>
-
-            </div>
-
-          </div>
-
         )}
+      </Panel>
 
-      </div>
+      <Panel
+        title="Selected Forecast"
+        icon={TrendingUp}
+      >
+        {loading ? (
+          <p
+            style={{
+              color: COLORS.muted,
+            }}
+          >
+            Loading saved forecast...
+          </p>
+        ) : !selectedRevisionGroup ? (
+          <p
+            style={{
+              color: COLORS.muted,
+            }}
+          >
+            No saved forecast is available
+            for the selected reporting week.
+          </p>
+        ) : !hasCompleteForecast ? (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              gap: 9,
+              color: COLORS.danger,
+            }}
+          >
+            <AlertTriangle
+              size={18}
+            />
+            The selected forecast is
+            incomplete or unavailable.
+          </div>
+        ) : (
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+                marginBottom: 22,
+                color: COLORS.muted,
+                fontSize: 14,
+              }}
+            >
+              <CalendarDays
+                size={17}
+              />
 
+              <span>
+                {formatWeek(
+                  selectedWeek
+                )}
+              </span>
+
+              <span>•</span>
+
+              <strong
+                style={{
+                  color: COLORS.forest,
+                }}
+              >
+                {revisionLabel(
+                  selectedRevisionGroup.revision
+                )}
+              </strong>
+            </div>
+
+            {EIGHT_INPUT_GRADES.map(
+              (grade) => {
+                const record =
+                  selectedForecasts[
+                    grade
+                  ];
+
+                return (
+                  <section
+                    key={grade}
+                    style={{
+                      marginBottom: 26,
+                    }}
+                  >
+                    <h3
+                      style={{
+                        color: COLORS.forest,
+                        fontSize: 17,
+                        marginTop: 0,
+                        marginBottom: 13,
+                      }}
+                    >
+                      {grade}
+                    </h3>
+
+                    <ForecastTable
+                      record={record}
+                    />
+                  </section>
+                );
+              }
+            )}
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

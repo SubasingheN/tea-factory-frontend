@@ -8,79 +8,97 @@ import {
 } from "react-router-dom";
 
 import {
-  Home,
-  Database,
-  LineChart,
+  LayoutDashboard,
+  ClipboardPenLine,
   ChartNoAxesCombined,
-  BrainCircuit,
-  AlertTriangle,
-  CircleHelp,
+  GitCompareArrows,
   History,
+  AlertTriangle,
   FileText,
   ArrowLeft,
+  Leaf,
 } from "lucide-react";
+
+const BASE_PATH = "/tea-demand-forecasting";
+
+const navItems = [
+  {
+    label: "Dashboard",
+    path: BASE_PATH,
+    icon: LayoutDashboard,
+    end: true,
+  },
+  {
+    label: "Weekly Data Entry",
+    path: `${BASE_PATH}/weekly-data`,
+    icon: ClipboardPenLine,
+  },
+  {
+    label: "Demand Forecast",
+    path: `${BASE_PATH}/forecast`,
+    icon: ChartNoAxesCombined,
+  },
+  {
+    label: "Demand Forecast Comparison",
+    path: `${BASE_PATH}/comparison`,
+    icon: GitCompareArrows,
+  },
+  {
+    label: "Demand Forecast History",
+    path: `${BASE_PATH}/history`,
+    icon: History,
+  },
+  {
+    label: "Alerts & Recommendations",
+    path: `${BASE_PATH}/alerts`,
+    icon: AlertTriangle,
+  },
+  {
+    label: "Reports",
+    path: `${BASE_PATH}/reports`,
+    icon: FileText,
+  },
+];
 
 export default function TeaDemandForecasting() {
   const navigate = useNavigate();
-
-  const navItems = [
-    {
-      label: "Home",
-      path: "/tea-demand-forecasting",
-      icon: Home,
-      end: true,
-    },
-    {
-      label: "Weekly Data Entry",
-      path: "/tea-demand-forecasting/weekly-data",
-      icon: Database,
-    },
-    {
-      label: "Demand Forecast",
-      path: "/tea-demand-forecasting/forecast",
-      icon: LineChart,
-    },
-    {
-      label: "Research TFT Forecast",
-      path: "/tea-demand-forecasting/research-forecast",
-      icon: ChartNoAxesCombined,
-    },
-    {
-      label: "Research TFT Explainability",
-      path: "/tea-demand-forecasting/research-explainability",
-      icon: BrainCircuit,
-    },
-    {
-      label: "Alerts & Recommendations",
-      path: "/tea-demand-forecasting/alerts",
-      icon: AlertTriangle,
-    },
-    {
-      label: "Why This Forecast?",
-      path: "/tea-demand-forecasting/explainability",
-      icon: CircleHelp,
-    },
-    {
-      label: "Forecast History",
-      path: "/tea-demand-forecasting/history",
-      icon: History,
-    },
-    {
-      label: "Reports",
-      path: "/tea-demand-forecasting/reports",
-      icon: FileText,
-    },
-  ];
 
   return (
     <div className="demand-app-layout">
       <aside className="demand-sidebar">
         <div className="demand-sidebar-brand">
-          <h2>Tea Demand</h2>
-          <p>Forecasting System</p>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.12)",
+              }}
+            >
+              <Leaf size={23} />
+            </div>
+
+            <div>
+              <h2>Tea Demand</h2>
+              <p>Factory Planning</p>
+            </div>
+          </div>
         </div>
 
-        <nav className="demand-sidebar-nav">
+        <nav
+          className="demand-sidebar-nav"
+          aria-label="Tea demand navigation"
+        >
           {navItems.map((item) => {
             const Icon = item.icon;
 
@@ -95,7 +113,11 @@ export default function TeaDemandForecasting() {
                   }`
                 }
               >
-                <Icon size={19} />
+                <Icon
+                  size={19}
+                  aria-hidden="true"
+                />
+
                 <span>{item.label}</span>
               </NavLink>
             );
@@ -108,7 +130,11 @@ export default function TeaDemandForecasting() {
             className="demand-back-btn"
             onClick={() => navigate("/home")}
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft
+              size={18}
+              aria-hidden="true"
+            />
+
             <span>Back to Main System</span>
           </button>
         </div>

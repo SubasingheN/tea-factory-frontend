@@ -1,14 +1,20 @@
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import { useLocation } from "react-router-dom";
 
 import {
-  AlertTriangle,
-  CalendarDays,
+  AlertCircle,
+  ChartNoAxesCombined,
   CheckCircle2,
-  Database,
-  Leaf,
-  LineChart as LineChartIcon,
-  RefreshCw,
+  TrendingUp,
+  ClipboardList,
 } from "lucide-react";
 
 import {
@@ -23,124 +29,421 @@ import {
 } from "recharts";
 
 import {
-  SIX_INPUT_TEA_GRADES,
-  generateSixInputTFTForecast,
-  formatSixInputDate,
-  formatSixInputDemand,
-} from "../../services/sixInputForecastService";
+  EIGHT_INPUT_GRADES,
+  getEightInputHistoricalWeek,
+} from "../../services/eightInputDataService";
 
-import {
-  getSixInputFactoryStatus,
-  getSixInputHistoricalWeek,
-} from "../../services/sixInputObservationService";
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 const COLORS = {
   forest: "#153D2B",
   green: "#2E6B4E",
-  gold: "#C8A45D",
-  ivory: "#F5F3E9",
-  white: "#FFFFFF",
-  muted: "#63756A",
+  muted: "#66786E",
   border: "#D8E2D3",
+  white: "#FFFFFF",
+  background: "#F6F8F4",
+  success: "#24724B",
+  warning: "#805C19",
+  danger: "#B54747",
 };
 
 const GRADE_COLORS = {
-  BOP: "#215C43",
-  BOPF: "#B38D42",
-  Dust: "#347DA1",
-  OP: "#8659A7",
-  Pekoe: "#C36D45",
+  BOP: "#153D2B",
+  BOPF: "#2E6B4E",
+  Dust: "#C08B2C",
+  OP: "#3E6FA3",
+  Pekoe: "#8A5A91",
 };
 
-const DEFAULT_WEEK = "2026-10-05";
+const PANEL_STYLE = {
+  padding: 24,
+  background: COLORS.white,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 16,
+  marginBottom: 20,
+};
 
-function getTodayString() {
-  const today = new Date();
+const CELL_STYLE = {
+  padding: "12px 14px",
+  borderBottom: `1px solid ${COLORS.border}`,
+  fontSize: 14,
+  whiteSpace: "nowrap",
+};
 
-  return [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, "0"),
-    String(today.getDate()).padStart(2, "0"),
-  ].join("-");
+const OBSERVATION_FIELDS = [
+  {
+    key: "demand_kg",
+    label: "Demand",
+    suffix: " kg",
+  },
+  {
+    key: "production_kg",
+    label: "Production",
+    suffix: " kg",
+  },
+  {
+    key: "inventory_kg",
+    label: "Inventory",
+    suffix: " kg",
+  },
+  {
+    key: "usd_lkr_monday_rate",
+    label: "USD/LKR Monday",
+    digits: 4,
+  },
+  {
+    key: "usd_lkr_sunday_rate",
+    label: "USD/LKR Sunday",
+    digits: 4,
+  },
+  {
+    key: "festival_flag",
+    label: "Festival Week",
+  },
+  {
+    key: "auction_price_high_lkr",
+    label: "High-Elevation Auction Price",
+    prefix: "LKR ",
+    digits: 2,
+  },
+  {
+    key: "auction_price_medium_lkr",
+    label: "Medium-Elevation Auction Price",
+    prefix: "LKR ",
+    digits: 2,
+  },
+  {
+    key: "auction_price_low_lkr",
+    label: "Low-Elevation Auction Price",
+    prefix: "LKR ",
+    digits: 2,
+  },
+];
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  const text = String(value).slice(0, 10);
+  const parsed = new Date(`${text}T12:00:00Z`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return text;
+  }
+
+  return parsed.toLocaleDateString("en-GB", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function addDays(value, days) {
-  if (!value) return "";
+  if (!value) return null;
 
-  const date = new Date(`${value}T12:00:00Z`);
-
-  if (Number.isNaN(date.getTime())) return "";
-
-  date.setUTCDate(date.getUTCDate() + days);
-
-  return date.toISOString().slice(0, 10);
-}
-
-function latestCompletedMonday() {
-  const today = new Date();
-
-  const daysSinceMonday = (today.getDay() + 6) % 7;
-
-  const lastMonday = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() - daysSinceMonday - 7
+  const parsed = new Date(
+    `${value}T12:00:00Z`
   );
 
-  return [
-    lastMonday.getFullYear(),
-    String(lastMonday.getMonth() + 1).padStart(2, "0"),
-    String(lastMonday.getDate()).padStart(2, "0"),
-  ].join("-");
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  parsed.setUTCDate(
+    parsed.getUTCDate() + days
+  );
+
+  return parsed.toISOString().slice(0, 10);
 }
 
-function isValidCompletedWeek(value) {
+function formatNumber(value, digits = 0) {
   if (
-    typeof value !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "—";
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "—";
+  }
+
+  return number.toLocaleString("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  });
+}
+
+function formatKg(value) {
+  const formatted = formatNumber(value);
+
+  return formatted === "—"
+    ? "—"
+    : `${formatted} kg`;
+}
+
+function getErrorMessage(error) {
+  return (
+    error?.message ||
+    "Unable to retrieve saved demand forecasts."
+  );
+}
+
+function formatObservation(field, value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "—";
+  }
+
+  if (field.key === "festival_flag") {
+    return Number(value) === 1
+      ? "Yes"
+      : "No";
+  }
+
+  const formatted = formatNumber(
+    value,
+    field.digits ?? 0
+  );
+
+  if (formatted === "—") {
+    return "—";
+  }
+
+  return (
+    `${field.prefix || ""}` +
+    formatted +
+    `${field.suffix || ""}`
+  );
+}
+
+function extractRecords(response) {
+  if (Array.isArray(response?.records)) {
+    return response.records;
+  }
+
+  if (Array.isArray(response?.observations)) {
+    return response.observations;
+  }
+
+  if (Array.isArray(response?.data?.records)) {
+    return response.data.records;
+  }
+
+  return [];
+}
+
+function isValidWeeklyForecast(record, origin) {
+  if (
+    !record ||
+    record.finalized !== true ||
+    record.forecast_origin !== origin ||
+    !EIGHT_INPUT_GRADES.includes(
+      record.tea_type
+    ) ||
+    !Array.isArray(record.forecasts) ||
+    record.forecasts.length !== 4
   ) {
     return false;
   }
 
-  const date = new Date(`${value}T12:00:00Z`);
+  return record.forecasts.every(
+    (item, index) => {
+      const lower = Number(
+        item?.lower_demand_kg
+      );
 
-  return (
-    !Number.isNaN(date.getTime()) &&
-    date.toISOString().slice(0, 10) === value &&
-    date.getUTCDay() === 1 &&
-    addDays(value, 6) < getTodayString()
+      const median = Number(
+        item?.median_demand_kg
+      );
+
+      const upper = Number(
+        item?.upper_demand_kg
+      );
+
+      const expectedWeek = addDays(
+        origin,
+        (index + 1) * 7
+      );
+
+      return (
+        item?.week === expectedWeek &&
+        item?.horizon === index + 1 &&
+        Number.isFinite(lower) &&
+        Number.isFinite(median) &&
+        Number.isFinite(upper) &&
+        lower >= 0 &&
+        lower <= median &&
+        median <= upper
+      );
+    }
   );
 }
 
-function Panel({ title, icon: Icon, children }) {
+function validateLatestForecastSet(response) {
+  if (response?.status !== "success") {
+    throw new Error(
+      "The forecast response is invalid."
+    );
+  }
+
+  if (response.available === false) {
+    return null;
+  }
+
+  const origin = response.forecast_origin;
+  const forecasts = response.forecasts;
+
+  if (
+    !origin ||
+    !forecasts ||
+    typeof forecasts !== "object"
+  ) {
+    throw new Error(
+      "The latest saved forecast is incomplete."
+    );
+  }
+
+  const byGrade = {};
+
+  for (const grade of EIGHT_INPUT_GRADES) {
+    const record = forecasts[grade];
+
+    if (!isValidWeeklyForecast(record, origin)) {
+      throw new Error(
+        `The forecast for ${grade} is incomplete. ` +
+        "Please review Forecast History."
+      );
+    }
+
+    byGrade[grade] = record;
+  }
+
+  const first =
+    byGrade[EIGHT_INPUT_GRADES[0]];
+
+  for (const grade of EIGHT_INPUT_GRADES) {
+    const record = byGrade[grade];
+
+    if (
+      record.model !== first.model ||
+      record.model_version !==
+        first.model_version ||
+      record.historical_backfill !==
+        first.historical_backfill ||
+      record.operational_forecast !==
+        first.operational_forecast
+    ) {
+      throw new Error(
+        "The saved forecast records are inconsistent."
+      );
+    }
+  }
+
+  if (
+    !Number.isInteger(response.revision) ||
+    response.revision < 0
+  ) {
+    throw new Error(
+      "The saved forecast revision is invalid."
+    );
+  }
+
+  return {
+    origin,
+    revision: response.revision,
+    source: response.source,
+    byGrade,
+    historical:
+      first.historical_backfill === true ||
+      first.forecast_type ===
+        "historical_backfill",
+    forecastStart: addDays(origin, 7),
+    forecastEnd: addDays(origin, 28),
+  };
+}
+
+async function getLatestSavedForecast(
+  origin = null
+) {
+  const params = new URLSearchParams();
+
+  if (origin) {
+    params.set("origin", origin);
+  }
+
+  const query = params.toString();
+
+  let response;
+
+  try {
+    response = await fetch(
+      `${API_BASE}/research/eight-input/history/latest` +
+        (query ? `?${query}` : ""),
+      {
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+  } catch {
+    throw new Error(
+      "Cannot connect to the factory backend."
+    );
+  }
+
+  const result = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      typeof result.detail === "string"
+        ? result.detail
+        : "Unable to retrieve the latest forecast."
+    );
+  }
+
+  return result;
+}
+
+function Panel({
+  title,
+  icon: Icon,
+  children,
+}) {
   return (
-    <section
-      style={{
-        background: COLORS.white,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 18,
-        padding: 24,
-        marginBottom: 20,
-        boxShadow: "0 4px 18px rgba(21,61,43,0.04)",
-      }}
-    >
+    <section style={PANEL_STYLE}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
           gap: 12,
-          marginBottom: 18,
+          marginBottom: 20,
         }}
       >
-        <Icon size={22} color={COLORS.green} />
-
         <h2
           style={{
             margin: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
             color: COLORS.forest,
-            fontSize: "1.15rem",
+            fontSize: 19,
           }}
         >
+          {Icon && <Icon size={20} />}
           {title}
         </h2>
       </div>
@@ -150,842 +453,858 @@ function Panel({ title, icon: Icon, children }) {
   );
 }
 
-function StatCard({ label, value }) {
+function StatusMessage({
+  type = "success",
+  children,
+}) {
+  const success = type === "success";
+  const warning = type === "warning";
+
+  const background = success
+    ? "#EDF8F1"
+    : warning
+      ? "#FFF9EB"
+      : "#FFF1F1";
+
+  const color = success
+    ? COLORS.success
+    : warning
+      ? COLORS.warning
+      : COLORS.danger;
+
+  const Icon = success
+    ? CheckCircle2
+    : AlertCircle;
+
+  return (
+    <div
+      role={success ? "status" : "alert"}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        padding: "13px 15px",
+        borderRadius: 10,
+        marginBottom: 18,
+        background,
+        color,
+        lineHeight: 1.5,
+      }}
+    >
+      <Icon
+        size={19}
+        style={{ flexShrink: 0 }}
+      />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  description,
+}) {
   return (
     <div
       style={{
-        background: COLORS.ivory,
+        padding: 18,
+        background: COLORS.white,
         border: `1px solid ${COLORS.border}`,
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 13,
       }}
     >
       <div
         style={{
           color: COLORS.muted,
           fontSize: 12,
-          marginBottom: 8,
+          fontWeight: 600,
+          marginBottom: 9,
         }}
       >
         {label}
       </div>
 
-      <strong
+      <div
         style={{
           color: COLORS.forest,
-          fontSize: 18,
+          fontSize: 23,
+          fontWeight: 700,
+          lineHeight: 1.3,
         }}
       >
         {value}
-      </strong>
+      </div>
+
+      {description && (
+        <div
+          style={{
+            color: COLORS.muted,
+            fontSize: 12,
+            marginTop: 7,
+            lineHeight: 1.5,
+          }}
+        >
+          {description}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GradeTabs({
+  selected,
+  onChange,
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 9,
+        marginBottom: 22,
+      }}
+    >
+      {EIGHT_INPUT_GRADES.map((grade) => {
+        const active = grade === selected;
+
+        return (
+          <button
+            key={grade}
+            type="button"
+            onClick={() => onChange(grade)}
+            aria-pressed={active}
+            style={{
+              border: active
+                ? `1px solid ${COLORS.forest}`
+                : `1px solid ${COLORS.border}`,
+              borderRadius: 9,
+              background: active
+                ? COLORS.forest
+                : COLORS.white,
+              color: active
+                ? COLORS.white
+                : COLORS.forest,
+              fontWeight: 700,
+              padding: "10px 18px",
+              cursor: "pointer",
+            }}
+          >
+            {grade}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 export default function DemandForecast() {
-  const [factoryStatus, setFactoryStatus] =
+  const location = useLocation();
+
+  const requestedOrigin =
+    location.state?.forecastOrigin || null;
+
+  const [selectedGrade, setSelectedGrade] =
+    useState(EIGHT_INPUT_GRADES[0]);
+
+  const [forecastSet, setForecastSet] =
     useState(null);
 
-  const [weekStartDate, setWeekStartDate] =
-    useState(DEFAULT_WEEK);
+  const [observations, setObservations] =
+    useState({});
 
-  const [historicalRecords, setHistoricalRecords] =
-    useState([]);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [selectedGrades, setSelectedGrades] =
-    useState(["BOP"]);
+  const [error, setError] =
+    useState("");
 
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-
-  const [error, setError] = useState("");
-  const [forecast, setForecast] = useState(null);
+  const [
+    observationWarning,
+    setObservationWarning,
+  ] = useState("");
 
   const requestId = useRef(0);
 
-  const firstWeek =
-    factoryStatus?.csv_first_week || "2021-01-04";
+  const loadForecasts = useCallback(
+    async (origin = null) => {
+      const request = ++requestId.current;
 
-  const maximumWeek = latestCompletedMonday();
-
-  const availableGrades = useMemo(
-    () =>
-      historicalRecords.map(
-        (record) => record.tea_type
-      ),
-    [historicalRecords]
-  );
-
-  const selectedAvailableGrades = useMemo(
-    () =>
-      selectedGrades.filter((grade) =>
-        availableGrades.includes(grade)
-      ),
-    [selectedGrades, availableGrades]
-  );
-
-  const chartData = useMemo(() => {
-    if (!forecast) return [];
-
-    return [0, 1, 2, 3].map((index) => {
-      const firstGrade = forecast.selected_grades[0];
-
-      const firstWeekForecast =
-        forecast.forecasts[firstGrade][index];
-
-      const point = {
-        week: `Week ${index + 1}`,
-        date: firstWeekForecast.week,
-      };
-
-      for (const grade of forecast.selected_grades) {
-        point[grade] =
-          forecast.forecasts[grade][index]
-            .median_demand_kg;
-      }
-
-      return point;
-    });
-  }, [forecast]);
-
-  async function loadHistoricalWeek(
-    selectedWeek,
-    currentRequest
-  ) {
-    const result = await getSixInputHistoricalWeek(
-      selectedWeek
-    );
-
-    if (currentRequest !== requestId.current) {
-      return;
-    }
-
-    setHistoricalRecords(result.records);
-
-    setSelectedGrades((current) => {
-      const supported = current.filter((grade) =>
-        result.selected_grades.includes(grade)
-      );
-
-      if (supported.length > 0) return supported;
-
-      const preferred = result.selected_grades.includes(
-        "BOP"
-      )
-        ? "BOP"
-        : result.selected_grades[0];
-
-      return preferred ? [preferred] : [];
-    });
-  }
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function initialize() {
-      const currentRequest = ++requestId.current;
+      setLoading(true);
+      setError("");
+      setObservationWarning("");
 
       try {
-        const status = await getSixInputFactoryStatus();
+        const latestResponse =
+          await getLatestSavedForecast(origin);
 
-        if (
-          !mounted ||
-          currentRequest !== requestId.current
-        ) {
+        if (request !== requestId.current) {
           return;
         }
 
-        setFactoryStatus(status);
+        const parsed =
+          validateLatestForecastSet(
+            latestResponse
+          );
 
-        const initialWeek =
-          status.latest_saved_week ||
-          status.csv_latest_week ||
-          DEFAULT_WEEK;
+        setForecastSet(parsed);
 
-        setWeekStartDate(initialWeek);
+        if (!parsed) {
+          setObservations({});
+          return;
+        }
 
-        await loadHistoricalWeek(
-          initialWeek,
-          currentRequest
-        );
-      } catch (err) {
-        if (
-          mounted &&
-          currentRequest === requestId.current
-        ) {
-          setError(
-            err.message ||
-              "Unable to load recorded factory data."
+        try {
+          const weeklyResponse =
+            await getEightInputHistoricalWeek(
+              parsed.origin
+            );
+
+          if (request !== requestId.current) {
+            return;
+          }
+
+          const records =
+            extractRecords(weeklyResponse);
+
+          const byGrade = {};
+
+          for (const record of records) {
+            if (
+              EIGHT_INPUT_GRADES.includes(
+                record.tea_type
+              )
+            ) {
+              byGrade[record.tea_type] =
+                record;
+            }
+          }
+
+          setObservations(byGrade);
+
+          if (
+            !EIGHT_INPUT_GRADES.every(
+              (grade) => Boolean(byGrade[grade])
+            )
+          ) {
+            setObservationWarning(
+              "Complete saved weekly observations " +
+              "are unavailable for this reporting week."
+            );
+          }
+        } catch {
+          if (request !== requestId.current) {
+            return;
+          }
+
+          setObservations({});
+
+          setObservationWarning(
+            "Saved weekly observations could not be loaded."
           );
         }
+      } catch (caughtError) {
+        if (request !== requestId.current) {
+          return;
+        }
+
+        setForecastSet(null);
+        setObservations({});
+        setError(
+          getErrorMessage(caughtError)
+        );
       } finally {
-        if (
-          mounted &&
-          currentRequest === requestId.current
-        ) {
+        if (request === requestId.current) {
           setLoading(false);
         }
       }
-    }
+    },
+    []
+  );
 
-    initialize();
+  useEffect(() => {
+    loadForecasts(requestedOrigin);
 
     return () => {
-      mounted = false;
       requestId.current += 1;
     };
-  }, []);
+  }, [loadForecasts, requestedOrigin]);
 
-  async function changeWeek(nextWeek) {
-    const currentRequest = ++requestId.current;
+  const selectedRecord =
+    forecastSet?.byGrade?.[selectedGrade] ||
+    null;
 
-    setWeekStartDate(nextWeek);
-    setHistoricalRecords([]);
-    setForecast(null);
-    setError("");
+  const selectedPredictions =
+    selectedRecord?.forecasts || [];
 
-    if (
-      !isValidCompletedWeek(nextWeek) ||
-      nextWeek < firstWeek
-    ) {
-      setError(
-        "Select a completed reporting week starting on Monday."
-      );
-      return;
+  const selectedTotals = useMemo(() => {
+    if (selectedPredictions.length !== 4) {
+      return null;
     }
 
-    setLoading(true);
+    return selectedPredictions.reduce(
+      (totals, item) => ({
+        lower:
+          totals.lower +
+          Number(item.lower_demand_kg),
 
-    try {
-      await loadHistoricalWeek(
-        nextWeek,
-        currentRequest
-      );
-    } catch (err) {
-      if (currentRequest === requestId.current) {
-        setError(
-          err.message ||
-            "Unable to retrieve factory observations."
-        );
+        median:
+          totals.median +
+          Number(item.median_demand_kg),
+
+        upper:
+          totals.upper +
+          Number(item.upper_demand_kg),
+      }),
+      {
+        lower: 0,
+        median: 0,
+        upper: 0,
       }
-    } finally {
-      if (currentRequest === requestId.current) {
-        setLoading(false);
-      }
-    }
-  }
-
-  function toggleGrade(grade) {
-    if (!availableGrades.includes(grade)) return;
-
-    setSelectedGrades((current) =>
-      current.includes(grade)
-        ? current.filter((item) => item !== grade)
-        : SIX_INPUT_TEA_GRADES.filter(
-            (item) =>
-              item === grade || current.includes(item)
-          )
     );
+  }, [selectedPredictions]);
 
-    setForecast(null);
-    setError("");
-  }
+  const nextWeek =
+    selectedPredictions[0] || null;
 
-  async function generateForecast() {
-    setError("");
-    setForecast(null);
-
-    if (!isValidCompletedWeek(weekStartDate)) {
-      setError(
-        "Choose a completed Monday-to-Sunday reporting week."
-      );
-      return;
+  const chartData = useMemo(() => {
+    if (!forecastSet) {
+      return [];
     }
 
-    if (selectedAvailableGrades.length === 0) {
-      setError(
-        "Select at least one grade with recorded observations."
-      );
-      return;
-    }
-
-    const records = selectedAvailableGrades.map(
-      (grade) => {
-        const historical = historicalRecords.find(
-          (record) => record.tea_type === grade
-        );
-
-        return {
-          ...historical,
+    return [0, 1, 2, 3].map(
+      (index) => {
+        const result = {
+          week: `Week ${index + 1}`,
         };
+
+        for (const grade of EIGHT_INPUT_GRADES) {
+          const item =
+            forecastSet.byGrade[grade]
+              ?.forecasts?.[index];
+
+          result[grade] = item
+            ? Number(item.median_demand_kg)
+            : null;
+        }
+
+        return result;
       }
     );
+  }, [forecastSet]);
 
-    const payload = {
-      week_start_date: weekStartDate,
-      records,
-    };
+  const rangeChartData = useMemo(
+    () =>
+      selectedPredictions.map(
+        (item, index) => ({
+          week: `Week ${index + 1}`,
+          Lower: Number(
+            item.lower_demand_kg
+          ),
+          Expected: Number(
+            item.median_demand_kg
+          ),
+          Upper: Number(
+            item.upper_demand_kg
+          ),
+        })
+      ),
+    [selectedPredictions]
+  );
 
-    setGenerating(true);
-
-    try {
-      const result =
-        await generateSixInputTFTForecast(payload);
-
-      setForecast(result);
-    } catch (err) {
-      setError(
-        err.message ||
-          "Unable to generate the demand forecast."
-      );
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  const controlsDisabled = loading || generating;
+  const savedObservation =
+    observations[selectedGrade] || null;
 
   return (
     <div
       className="demand-page"
       style={{
-        background: COLORS.ivory,
+        background: COLORS.background,
         minHeight: "100vh",
-        paddingBottom: 32,
+        paddingBottom: 40,
       }}
     >
-      <div className="demand-page-header">
-        <span className="demand-page-label">
-          PREMIUM CEYLON TEA
-        </span>
-
-        <h1>Demand Forecast</h1>
-
-        <p>
-          Generate four-week tea demand forecasts using
-          recorded factory observations and the frozen
-          six-input Temporal Fusion Transformer.
-        </p>
+      <div
+        className="demand-page-header"
+        style={{ marginBottom: 20 }}
+      >
+        <h1>4-Week Demand Forecast</h1>
       </div>
 
       {error && (
-        <div
-          className="demand-error-message"
-          role="alert"
-          style={{ marginBottom: 20 }}
-        >
-          <AlertTriangle
-            size={17}
-            style={{ marginRight: 8 }}
-          />
+        <StatusMessage type="error">
           {error}
-        </div>
+        </StatusMessage>
       )}
 
-      <div style={{ maxWidth: 1150 }}>
-        <Panel
-          title="1. Select Forecast Origin"
-          icon={CalendarDays}
-        >
-          <label
-            htmlFor="forecast-week"
-            style={{
-              display: "block",
-              color: COLORS.forest,
-              fontWeight: 600,
-              marginBottom: 8,
-            }}
+      {loading && (
+        <p style={{ color: COLORS.muted }}>
+          Loading saved forecasts...
+        </p>
+      )}
+
+      {!loading &&
+        !error &&
+        !forecastSet && (
+          <StatusMessage type="warning">
+            No complete four-week demand
+            forecasts are available yet.
+          </StatusMessage>
+        )}
+
+      {forecastSet?.historical && (
+        <StatusMessage type="warning">
+          This is a retrospectively saved
+          historical forecast record, not
+          a forecast issued during that
+          reporting week.
+        </StatusMessage>
+      )}
+
+      {forecastSet &&
+        !forecastSet.historical && (
+          <StatusMessage type="success">
+            The latest saved forecast is
+            available for all five tea grades.
+            {forecastSet.revision > 0 &&
+              ` Revision ${forecastSet.revision} is displayed.`}
+          </StatusMessage>
+        )}
+
+      {forecastSet && (
+        <>
+          <Panel
+            title="Saved Weekly Data"
+            icon={ClipboardList}
           >
-            Recorded reporting week
-          </label>
+            <GradeTabs
+              selected={selectedGrade}
+              onChange={setSelectedGrade}
+            />
 
-          <input
-            id="forecast-week"
-            type="date"
-            className="demand-input"
-            value={weekStartDate}
-            min={firstWeek}
-            max={maximumWeek}
-            disabled={controlsDisabled}
-            onChange={(event) =>
-              changeWeek(event.target.value)
-            }
-            style={{ maxWidth: 300 }}
-          />
-
-          <p
-            style={{
-              marginTop: 12,
-              color: COLORS.muted,
-              fontSize: 13,
-              lineHeight: 1.7,
-            }}
-          >
-            Only completed reporting weeks with
-            recorded observations can be used.
-            Future values are predicted by the model,
-            not entered manually.
-          </p>
-
-          {loading ? (
-            <p style={{ color: COLORS.muted }}>
-              Loading factory observations...
-            </p>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(190px, 1fr))",
-                gap: 12,
-                marginTop: 18,
-              }}
-            >
-              <StatCard
-                label="Forecast Origin"
-                value={formatSixInputDate(
-                  weekStartDate
-                )}
-              />
-
-              <StatCard
-                label="Recorded Grades"
-                value={availableGrades.length}
-              />
-
-              <StatCard
-                label="Forecast Horizon"
-                value="4 Weeks"
-              />
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="2. Select Tea Grades" icon={Leaf}>
-          <p
-            style={{
-              color: COLORS.muted,
-              marginTop: 0,
-            }}
-          >
-            Select the tea grades you want to forecast.
-            Only grades with recorded values for the
-            selected week are available.
-          </p>
-
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-            }}
-          >
-            {SIX_INPUT_TEA_GRADES.map((grade) => {
-              const available =
-                availableGrades.includes(grade);
-
-              const selected =
-                selectedGrades.includes(grade);
-
-              return (
-                <label
-                  key={grade}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 9,
-                    padding: "12px 17px",
-                    borderRadius: 12,
-                    border: `1px solid ${
-                      selected
-                        ? COLORS.forest
-                        : COLORS.border
-                    }`,
-                    background: selected
-                      ? COLORS.forest
-                      : COLORS.white,
-                    color: selected
-                      ? COLORS.white
-                      : COLORS.forest,
-                    fontWeight: 600,
-                    cursor: available
-                      ? "pointer"
-                      : "not-allowed",
-                    opacity: available ? 1 : 0.45,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected && available}
-                    disabled={
-                      controlsDisabled || !available
-                    }
-                    onChange={() =>
-                      toggleGrade(grade)
-                    }
-                    style={{
-                      accentColor: COLORS.gold,
-                    }}
-                  />
-                  {grade}
-
-                  {available && (
-                    <CheckCircle2
-                      size={15}
-                      color={
-                        selected
-                          ? COLORS.gold
-                          : COLORS.green
-                      }
-                    />
-                  )}
-                </label>
-              );
-            })}
-          </div>
-
-          {!loading && availableGrades.length === 0 && (
-            <p
-              style={{
-                color: COLORS.muted,
-                marginTop: 16,
-              }}
-            >
-              No observations are recorded for this
-              week. Enter and save actual factory
-              values on the Weekly Data Entry page
-              before generating forecasts.
-            </p>
-          )}
-        </Panel>
-
-        <Panel
-          title="3. Generate Four-Week Forecast"
-          icon={LineChartIcon}
-        >
-          <p
-            style={{
-              color: COLORS.muted,
-              lineHeight: 1.7,
-            }}
-          >
-            The model uses the latest 52 consecutive
-            historical weeks for each selected grade,
-            including saved MongoDB observations when
-            available. Predictions are generated for
-            the following four weeks.
-          </p>
-
-          <button
-            type="button"
-            className="demand-save-btn"
-            disabled={
-              controlsDisabled ||
-              selectedAvailableGrades.length === 0 ||
-              !isValidCompletedWeek(weekStartDate)
-            }
-            onClick={generateForecast}
-          >
-            {generating ? (
-              <RefreshCw size={18} />
-            ) : (
-              <LineChartIcon size={18} />
+            {observationWarning && (
+              <StatusMessage type="warning">
+                {observationWarning}
+              </StatusMessage>
             )}
 
-            {generating
-              ? "Generating Forecast..."
-              : "Generate TFT Forecast"}
-          </button>
-
-          <p
-            style={{
-              color: COLORS.muted,
-              fontSize: 12,
-              marginTop: 14,
-            }}
-          >
-            Forecast generation does not save
-            predictions or retrain the model.
-          </p>
-        </Panel>
-
-        {forecast && (
-          <>
-            <Panel
-              title="4. Forecast Overview"
-              icon={CheckCircle2}
-            >
-              <div
-                className="demand-success-message"
-                role="status"
-                style={{ marginBottom: 18 }}
-              >
-                Forecasts generated successfully for{" "}
-                {forecast.selected_grades.join(", ")}.
-              </div>
-
+            {savedObservation ? (
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns:
                     "repeat(auto-fit, minmax(190px, 1fr))",
-                  gap: 12,
+                  gap: 14,
                 }}
               >
-                <StatCard
-                  label="Forecast Origin"
-                  value={formatSixInputDate(
-                    forecast.forecast_origin
-                  )}
-                />
-
-                <StatCard
-                  label="Tea Grades"
-                  value={
-                    forecast.selected_grades.length
-                  }
-                />
-
-                <StatCard
-                  label="Forecast Predictions"
-                  value={forecast.forecast_count}
-                />
-
-                <StatCard
-                  label="Forecast Type"
-                  value={
-                    forecast.forecast_type ===
-                    "historical_replay"
-                      ? "Historical Replay"
-                      : "Latest Recorded Week"
-                  }
-                />
+                {OBSERVATION_FIELDS.map(
+                  (field) => (
+                    <SummaryCard
+                      key={field.key}
+                      label={field.label}
+                      value={formatObservation(
+                        field,
+                        savedObservation[field.key]
+                      )}
+                    />
+                  )
+                )}
               </div>
-            </Panel>
-
-            <Panel
-              title="5. Predicted Demand Chart"
-              icon={LineChartIcon}
-            >
+            ) : (
               <p
                 style={{
                   color: COLORS.muted,
-                  marginTop: 0,
                 }}
               >
-                Median predicted weekly tea demand
-                (P50), measured in kilograms.
+                Saved weekly observations
+                are unavailable for this
+                reporting week.
               </p>
+            )}
+          </Panel>
 
-              <div style={{ height: 350 }}>
-                <ResponsiveContainer
-                  width="100%"
-                  height="100%"
-                >
-                  <LineChart
-                    data={chartData}
-                    margin={{
-                      top: 10,
-                      right: 25,
-                      left: 10,
-                      bottom: 10,
-                    }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                    />
+          <Panel
+            title="Demand Summary"
+            icon={TrendingUp}
+          >
+            <GradeTabs
+              selected={selectedGrade}
+              onChange={setSelectedGrade}
+            />
 
-                    <XAxis dataKey="week" />
-
-                    <YAxis
-                      tickFormatter={(value) =>
-                        Number(value).toLocaleString()
-                      }
-                    />
-
-                    <Tooltip
-                      formatter={(value) => [
-                        `${formatSixInputDemand(
-                          value
-                        )} kg`,
-                        "Predicted Demand",
-                      ]}
-                      labelFormatter={(label, payload) => {
-                        const date =
-                          payload?.[0]?.payload?.date;
-
-                        return date
-                          ? `${label} — ${formatSixInputDate(
-                              date
-                            )}`
-                          : label;
-                      }}
-                    />
-
-                    <Legend />
-
-                    {forecast.selected_grades.map(
-                      (grade) => (
-                        <Line
-                          key={grade}
-                          type="monotone"
-                          dataKey={grade}
-                          name={grade}
-                          stroke={GRADE_COLORS[grade]}
-                          strokeWidth={3}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                      )
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </Panel>
-
-            <Panel
-              title="6. Four-Week Demand Predictions"
-              icon={Database}
-            >
-              {forecast.selected_grades.map(
-                (grade) => (
-                  <div
-                    key={grade}
-                    style={{ marginBottom: 28 }}
-                  >
-                    <h3
-                      style={{
-                        color: COLORS.forest,
-                        marginBottom: 14,
-                      }}
-                    >
-                      {grade} — Predicted Demand
-                    </h3>
-
-                    <div
-                      style={{
-                        overflowX: "auto",
-                      }}
-                    >
-                      <table
-                        style={{
-                          width: "100%",
-                          borderCollapse: "collapse",
-                          textAlign: "left",
-                        }}
-                      >
-                        <thead>
-                          <tr
-                            style={{
-                              background:
-                                COLORS.forest,
-                              color: COLORS.white,
-                            }}
-                          >
-                            {[
-                              "Forecast Week",
-                              "P10 (kg)",
-                              "P50 (kg)",
-                              "P90 (kg)",
-                            ].map((heading) => (
-                              <th
-                                key={heading}
-                                style={{
-                                  padding: 13,
-                                }}
-                              >
-                                {heading}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {forecast.forecasts[
-                            grade
-                          ].map((week) => (
-                            <tr
-                              key={week.week}
-                              style={{
-                                borderBottom:
-                                  `1px solid ${COLORS.border}`,
-                              }}
-                            >
-                              <td
-                                style={{
-                                  padding: 13,
-                                }}
-                              >
-                                {formatSixInputDate(
-                                  week.week
-                                )}
-                              </td>
-
-                              <td
-                                style={{
-                                  padding: 13,
-                                }}
-                              >
-                                {formatSixInputDemand(
-                                  week.lower_demand_kg
-                                )}
-                              </td>
-
-                              <td
-                                style={{
-                                  padding: 13,
-                                  fontWeight: 700,
-                                  color:
-                                    COLORS.forest,
-                                }}
-                              >
-                                {formatSixInputDemand(
-                                  week.median_demand_kg
-                                )}
-                              </td>
-
-                              <td
-                                style={{
-                                  padding: 13,
-                                }}
-                              >
-                                {formatSixInputDemand(
-                                  week.upper_demand_kg
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )
-              )}
-
+            {selectedTotals && (
               <div
                 style={{
-                  padding: 16,
-                  borderRadius: 12,
-                  background: COLORS.ivory,
-                  color: COLORS.muted,
-                  fontSize: 13,
-                  lineHeight: 1.7,
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(185px, 1fr))",
+                  gap: 14,
                 }}
               >
-                <strong>Understanding the forecast:</strong>{" "}
-                P50 is the median predicted demand.
-                P10 and P90 represent the lower and
-                upper model prediction quantiles.
-                The P10–P90 interval is intended as
-                an 80% prediction interval, but
-                actual coverage is not guaranteed.
-                Predictions are not actual factory
-                observations.
+                <SummaryCard
+                  label={`${selectedGrade} — Next Week`}
+                  value={formatKg(
+                    nextWeek?.median_demand_kg
+                  )}
+                  description={
+                    nextWeek
+                      ? formatDate(
+                          nextWeek.week
+                        )
+                      : ""
+                  }
+                />
+
+                <SummaryCard
+                  label="Four-Week Expected Demand"
+                  value={formatKg(
+                    selectedTotals.median
+                  )}
+                />
+
+                <SummaryCard
+                  label="Four-Week Lower Estimate"
+                  value={formatKg(
+                    selectedTotals.lower
+                  )}
+                />
+
+                <SummaryCard
+                  label="Four-Week Upper Estimate"
+                  value={formatKg(
+                    selectedTotals.upper
+                  )}
+                />
               </div>
-            </Panel>
-          </>
-        )}
-      </div>
+            )}
+          </Panel>
+
+          <Panel
+            title={`${selectedGrade} — Weekly Demand Range`}
+            icon={ChartNoAxesCombined}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: 300,
+                marginBottom: 22,
+              }}
+            >
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+                <LineChart
+                  data={rangeChartData}
+                  margin={{
+                    top: 10,
+                    right: 20,
+                    left: 10,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                  />
+
+                  <XAxis dataKey="week" />
+
+                  <YAxis
+                    tickFormatter={(value) =>
+                      `${formatNumber(
+                        value / 1000,
+                        1
+                      )}k`
+                    }
+                  />
+
+                  <Tooltip
+                    formatter={(value, name) => [
+                      formatKg(value),
+                      name,
+                    ]}
+                  />
+
+                  <Legend />
+
+                  <Line
+                    type="monotone"
+                    dataKey="Lower"
+                    stroke="#8FAE9A"
+                    strokeDasharray="5 4"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+
+                  <Line
+                    type="monotone"
+                    dataKey="Expected"
+                    stroke={COLORS.forest}
+                    strokeWidth={3}
+                    dot={{ r: 5 }}
+                  />
+
+                  <Line
+                    type="monotone"
+                    dataKey="Upper"
+                    stroke="#C08B2C"
+                    strokeDasharray="5 4"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div
+              style={{
+                overflowX: "auto",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: 680,
+                  borderCollapse: "collapse",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background: COLORS.forest,
+                      color: COLORS.white,
+                      textAlign: "left",
+                    }}
+                  >
+                    {[
+                      "Week",
+                      "Starting Date",
+                      "Lower Demand",
+                      "Expected Demand",
+                      "Upper Demand",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        style={{
+                          padding: "13px 14px",
+                        }}
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {selectedPredictions.map(
+                    (prediction, index) => (
+                      <tr
+                        key={prediction.week}
+                      >
+                        <td style={CELL_STYLE}>
+                          Week {index + 1}
+                        </td>
+
+                        <td style={CELL_STYLE}>
+                          {formatDate(
+                            prediction.week
+                          )}
+                        </td>
+
+                        <td style={CELL_STYLE}>
+                          {formatKg(
+                            prediction.lower_demand_kg
+                          )}
+                        </td>
+
+                        <td
+                          style={{
+                            ...CELL_STYLE,
+                            fontWeight: 700,
+                            color: COLORS.forest,
+                          }}
+                        >
+                          {formatKg(
+                            prediction.median_demand_kg
+                          )}
+                        </td>
+
+                        <td style={CELL_STYLE}>
+                          {formatKg(
+                            prediction.upper_demand_kg
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <Panel
+            title="All Tea Grades — Expected Demand"
+            icon={ChartNoAxesCombined}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: 320,
+              }}
+            >
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+                <LineChart
+                  data={chartData}
+                  margin={{
+                    top: 10,
+                    right: 25,
+                    left: 10,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                  />
+
+                  <XAxis dataKey="week" />
+
+                  <YAxis
+                    tickFormatter={(value) =>
+                      `${formatNumber(
+                        value / 1000,
+                        1
+                      )}k`
+                    }
+                  />
+
+                  <Tooltip
+                    formatter={(value, name) => [
+                      formatKg(value),
+                      name,
+                    ]}
+                  />
+
+                  <Legend />
+
+                  {EIGHT_INPUT_GRADES.map(
+                    (grade) => (
+                      <Line
+                        key={grade}
+                        type="monotone"
+                        dataKey={grade}
+                        name={grade}
+                        stroke={
+                          GRADE_COLORS[grade]
+                        }
+                        strokeWidth={
+                          grade === selectedGrade
+                            ? 3
+                            : 2
+                        }
+                        strokeOpacity={
+                          grade === selectedGrade
+                            ? 1
+                            : 0.6
+                        }
+                        dot={{ r: 4 }}
+                      />
+                    )
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div
+              style={{
+                overflowX: "auto",
+                marginTop: 18,
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  minWidth: 550,
+                  borderCollapse: "collapse",
+                }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      background: COLORS.forest,
+                      color: COLORS.white,
+                      textAlign: "left",
+                    }}
+                  >
+                    <th style={CELL_STYLE}>
+                      Tea Grade
+                    </th>
+
+                    <th style={CELL_STYLE}>
+                      Four-Week Expected Demand
+                    </th>
+
+                    <th style={CELL_STYLE}>
+                      Average Weekly Demand
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {EIGHT_INPUT_GRADES.map(
+                    (grade) => {
+                      const predictions =
+                        forecastSet.byGrade[
+                          grade
+                        ].forecasts;
+
+                      const total =
+                        predictions.reduce(
+                          (sum, item) =>
+                            sum +
+                            Number(
+                              item.median_demand_kg
+                            ),
+                          0
+                        );
+
+                      return (
+                        <tr key={grade}>
+                          <td
+                            style={{
+                              ...CELL_STYLE,
+                              fontWeight: 700,
+                              color: COLORS.forest,
+                            }}
+                          >
+                            {grade}
+                          </td>
+
+                          <td
+                            style={CELL_STYLE}
+                          >
+                            {formatKg(total)}
+                          </td>
+
+                          <td
+                            style={CELL_STYLE}
+                          >
+                            {formatKg(
+                              total / 4
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </>
+      )}
     </div>
   );
 }
